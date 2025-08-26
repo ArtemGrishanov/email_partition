@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Email → AB группа (1–100)</title>
+  <style>
+    :root { --bg:#0b1020; --card:#111833; --text:#e8ecff; --muted:#94a3b8; --accent:#4f46e5; --ok:#10b981; --warn:#f59e0b; --err:#ef4444; }
+    *{box-sizing:border-box}
+    body{margin:0; font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji"; background:radial-gradient(1000px 600px at 10% -10%, #1b2347, #0b1020) fixed; color:var(--text)}
+    .wrap{max-width:880px; margin:40px auto; padding:0 16px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:22px; box-shadow:0 8px 32px rgba(0,0,0,.25)}
+    h1{font-size:24px; margin:0 0 16px}
+    p{color:var(--muted); margin:0 0 18px}
+    label{display:block; font-size:12px; color:var(--muted); margin-bottom:6px}
+    input{width:100%; padding:12px 14px; border-radius:12px; border:1px solid rgba(255,255,255,.12); background:#0f1530; color:var(--text); outline:none}
+    input:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(79,70,229,.25)}
+    .grid{display:grid; grid-template-columns:1fr; gap:14px}
+    @media (min-width:720px){ .grid{grid-template-columns:1.2fr 1fr} }
+    .row{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+    .muted{font-size:12px; color:var(--muted)}
+    .out{margin-top:14px; display:flex; align-items:center; gap:10px}
+    .badge{display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px; border:1px solid rgba(255,255,255,.14); background:#0d1330}
+    .num{font-weight:700; font-size:20px}
+    .isIn{font-weight:600}
+    .good{color:var(--ok)}
+    .bad{color:#f43f5e}
+    .copy{margin-left:auto; background:transparent; border:1px solid rgba(255,255,255,.18); color:var(--text); padding:8px 12px; border-radius:10px; cursor:pointer}
+    .copy:hover{border-color:var(--accent)}
+    .footer{margin-top:18px; font-size:12px; color:var(--muted)}
+    code{background:#0f1530; padding:2px 6px; border-radius:6px; border:1px solid rgba(255,255,255,.10)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>💌 Email → AB группа (1–100)</h1>
+      <p>Детерминированно хэшируем e‑mail в число <strong>1–100</strong>. Укажите диапазоны групп (например <code>1-20,50-100</code>) — инструмент покажет, входит ли пользователь в эксперимент. Есть поле «ключ эксперимента», чтобы для разных тестов иметь разные разбиения.</p>
+      <div class="grid">
+        <div>
+          <label for="email">Email</label>
+          <input id="email" placeholder="example@gmail.com" autocomplete="off" />
+        </div>
+        <div class="row">
+          <div>
+            <label for="ranges">Диапазоны групп</label>
+            <input id="ranges" placeholder="например: 1-20,50-100" />
+          </div>
+          <div>
+            <label for="key">Ключ эксперимента (необязательно)</label>
+            <input id="key" placeholder="release_42" />
+          </div>
+        </div>
+      </div>
+      <div class="out">
+        <div class="badge"><span>Группа:</span> <span id="bucket" class="num">—</span></div>
+        <div class="badge"><span>В эксперименте:</span> <span id="inexp" class="isIn">—</span></div>
+        <button id="copy" class="copy" title="Скопировать функцию bucket(email,key)">Копия функции</button>
+      </div>
+      <div class="footer">Нормализация: <code>trim → lowerCase</code>. Хэш: <code>SHA‑256</code> (Web Crypto), резерв — <code>FNV‑1a</code>. Маппинг: <code>(hash % 100) + 1</code>.</div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const emailEl = $("email");
+    const rangesEl = $("ranges");
+    const keyEl = $("key");
+    const outBucket = $("bucket");
+    const outIn = $("inexp");
+
+    // --- Public, copyable API ---
+    async function bucket(email, key = "") {
+      if (!email || typeof email !== 'string') return null;
+      const norm = normalizeEmail(email);
+      const msg = key ? key + "\n" + norm : norm;
+      let n = await sha256ToUint32(msg).catch(() => null);
+      if (n === null) n = fnv1aUint32(msg); // fallback
+      return (n % 100) + 1; // 1..100
+    }
+
+    function normalizeEmail(e) {
+      return String(e).trim().toLowerCase();
+    }
+
+    async function sha256ToUint32(s) {
+      const enc = new TextEncoder();
+      const buf = enc.encode(s);
+      const digest = await crypto.subtle.digest('SHA-256', buf);
+      const v = new DataView(digest);
+      // Take first 4 bytes as unsigned int32
+      return v.getUint32(0, false); // big-endian
+    }
+
+    function fnv1aUint32(str) {
+      let hash = 0x811c9dc5;
+      for (let i = 0; i < str.length; i++) {
+        hash ^= str.charCodeAt(i);
+        hash = (hash >>> 0) * 0x01000193 >>> 0;
+      }
+      return hash >>> 0;
+    }
+
+    function parseRanges(s) {
+      if (!s) return [];
+      return s.split(',').map(x => x.trim()).filter(Boolean).map(chunk => {
+        const m = chunk.match(/^(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?$/);
+        if (!m) return null;
+        const a = Math.max(1, Math.min(100, parseInt(m[1],10)));
+        const b = m[2] ? Math.max(1, Math.min(100, parseInt(m[2],10))) : a;
+        return a <= b ? [a,b] : [b,a];
+      }).filter(Boolean);
+    }
+
+    function inRanges(val, ranges) {
+      for (const [a,b] of ranges) if (val >= a && val <= b) return true;
+      return false;
+    }
+
+    async function recompute() {
+      const email = emailEl.value;
+      if (!email) { outBucket.textContent = '—'; outIn.textContent = '—'; outIn.className='isIn'; return; }
+      const b = await bucket(email, keyEl.value || "");
+      outBucket.textContent = b;
+      const ranges = parseRanges(rangesEl.value);
+      const ok = inRanges(b, ranges);
+      outIn.textContent = ok ? 'ДА' : 'НЕТ';
+      outIn.className = 'isIn ' + (ok ? 'good' : 'bad');
+    }
+
+    emailEl.addEventListener('input', recompute);
+    rangesEl.addEventListener('input', recompute);
+    keyEl.addEventListener('input', recompute);
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // sensible defaults
+      rangesEl.value = '1-20, 50-100';
+      recompute();
+    });
+
+    // Copy helper: puts a ready-to-use function on clipboard
+    const copyBtn = $("copy");
+    copyBtn.addEventListener('click', async () => {
+      const fn = `// Deterministic AB bucket (1..100)
+export async function abBucket(email, key = "") {
+  const norm = String(email).trim().toLowerCase();
+  const msg = key ? key + "\n" + norm : norm;
+  try {
+    const buf = new TextEncoder().encode(msg);
+    const dig = await crypto.subtle.digest('SHA-256', buf);
+    const v = new DataView(dig);
+    const n = v.getUint32(0, false);
+    return (n % 100) + 1;
+  } catch {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < msg.length; i++) { h ^= msg.charCodeAt(i); h = (h >>> 0) * 0x01000193 >>> 0; }
+    return (h % 100) + 1;
+  }
+}`;
+      await navigator.clipboard.writeText(fn);
+      copyBtn.textContent = 'Скопировано!';
+      setTimeout(() => copyBtn.textContent = 'Копия функции', 1400);
+    });
+  </script>
+</body>
+</html>
