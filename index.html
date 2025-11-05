@@ -13,8 +13,8 @@
     h1{font-size:24px; margin:0 0 16px}
     p{color:var(--muted); margin:0 0 18px}
     label{display:block; font-size:12px; color:var(--muted); margin-bottom:6px}
-    input{width:100%; padding:12px 14px; border-radius:12px; border:1px solid rgba(255,255,255,.12); background:#0f1530; color:var(--text); outline:none}
-    input:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(79,70,229,.25)}
+    input, textarea{width:100%; padding:12px 14px; border-radius:12px; border:1px solid rgba(255,255,255,.12); background:#0f1530; color:var(--text); outline:none; font:inherit; resize:vertical; min-height:48px}
+    input:focus, textarea:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(79,70,229,.25)}
     .grid{display:grid; grid-template-columns:1fr; gap:14px}
     @media (min-width:720px){ .grid{grid-template-columns:1.2fr 1fr} }
     .row{display:grid; grid-template-columns:1fr 1fr; gap:14px}
@@ -27,8 +27,12 @@
     .bad{color:#f43f5e}
     .copy{margin-left:auto; background:transparent; border:1px solid rgba(255,255,255,.18); color:var(--text); padding:8px 12px; border-radius:10px; cursor:pointer}
     .copy:hover{border-color:var(--accent)}
+    .btn{margin-top:8px; background:var(--accent); color:#fff; border:none; border-radius:12px; padding:12px 18px; font-weight:600; cursor:pointer; transition:background .2s ease}
+    .btn:hover{background:#4338ca}
+    .btn:disabled{opacity:.6; cursor:not-allowed}
     .footer{margin-top:18px; font-size:12px; color:var(--muted)}
     code{background:#0f1530; padding:2px 6px; border-radius:6px; border:1px solid rgba(255,255,255,.10)}
+    .stack{display:flex; flex-direction:column; gap:10px}
   </style>
 </head>
 <body>
@@ -59,6 +63,30 @@
       </div>
       <div class="footer">Нормализация: <code>trim → lowerCase</code>. Хэш: <code>SHA‑256</code> (Web Crypto), резерв — <code>FNV‑1a</code>. Маппинг: <code>(hash % 100) + 1</code>.</div>
     </div>
+    <div class="card">
+      <h2>Фильтрация списка адресов</h2>
+      <p class="muted">Вставьте набор e‑mail адресов (по одному в строке) — инструмент посчитает общее количество и оставит только те, что попадают в диапазоны выше.</p>
+      <div class="stack">
+        <div>
+          <label for="bulk-emails">Список адресов</label>
+          <textarea id="bulk-emails" rows="8" placeholder="user1@example.com&#10;user2@example.com"></textarea>
+          <div class="muted">Всего обнаружено: <strong id="bulk-count">0</strong></div>
+        </div>
+        <button id="filter-btn" class="btn">Фильтровать</button>
+        <div>
+          <label for="filtered-emails">Подходящие адреса</label>
+          <textarea id="filtered-emails" rows="8" readonly placeholder="Результат появится после фильтрации"></textarea>
+          <div class="muted">После фильтра: <strong id="filtered-count">0</strong></div>
+        </div>
+        <button id="corp-btn" class="btn">Фильтровать корпоративные адреса</button>
+        <div>
+          <label for="corp-emails">Корпоративные адреса</label>
+          <textarea id="corp-emails" rows="6" readonly placeholder="Сначала выполните обычную фильтрацию"></textarea>
+          <div class="muted">Корпоративных: <strong id="corp-count">0</strong></div>
+        </div>
+        <p class="muted">Используются те же диапазоны и ключ эксперимента, что указаны в панели выше. Если диапазоны пусты, результат будет пустым.</p>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -68,6 +96,14 @@
     const keyEl = $("key");
     const outBucket = $("bucket");
     const outIn = $("inexp");
+    const bulkInput = $("bulk-emails");
+    const bulkCount = $("bulk-count");
+    const filteredOut = $("filtered-emails");
+    const filteredCount = $("filtered-count");
+    const filterBtn = $("filter-btn");
+    const corpBtn = $("corp-btn");
+    const corpOut = $("corp-emails");
+    const corpCount = $("corp-count");
 
     // --- Public, copyable API ---
     async function bucket(email, key = "") {
@@ -117,6 +153,37 @@
       return false;
     }
 
+    const publicDomains = new Set([
+      'gmail.com','googlemail.com','yahoo.com','yahoo.fr','yahoo.de',
+      'hotmail.com','outlook.com','live.com','msn.com','icloud.com','me.com',
+      'yandex.ru','yandex.ua','yandex.kz','yandex.by','ya.ru','mail.ru','inbox.ru','list.ru','bk.ru',
+      'protonmail.com','pm.me','zoho.com','gmx.com','tutanota.com'
+    ]);
+
+    function isCorporateEmail(email) {
+      const norm = normalizeEmail(email);
+      const parts = norm.split('@');
+      if (parts.length !== 2) return false;
+      const domain = parts[1];
+      if (!domain || !domain.includes('.')) return false;
+      return !publicDomains.has(domain);
+    }
+
+    function splitEmailList(raw) {
+      if (!raw) return [];
+      return raw
+        .replace(/[;,]+/g, '\n')
+        .split(/\n+/)
+        .map(e => e.trim())
+        .filter(Boolean);
+    }
+
+    function updateBulkCounter() {
+      const total = splitEmailList(bulkInput.value).length;
+      bulkCount.textContent = total;
+      return total;
+    }
+
     async function recompute() {
       const email = emailEl.value;
       if (!email) { outBucket.textContent = '—'; outIn.textContent = '—'; outIn.className='isIn'; return; }
@@ -131,11 +198,55 @@
     emailEl.addEventListener('input', recompute);
     rangesEl.addEventListener('input', recompute);
     keyEl.addEventListener('input', recompute);
+    bulkInput.addEventListener('input', updateBulkCounter);
 
     document.addEventListener('DOMContentLoaded', () => {
       // sensible defaults
-      rangesEl.value = '1-20, 50-100';
+      rangesEl.value = '0-49';
       recompute();
+      updateBulkCounter();
+    });
+
+    filterBtn.addEventListener('click', async () => {
+      const emails = splitEmailList(bulkInput.value);
+      updateBulkCounter();
+      filteredOut.value = '';
+      filteredCount.textContent = '0';
+      corpOut.value = '';
+      corpCount.textContent = '0';
+
+      const ranges = parseRanges(rangesEl.value);
+      if (!ranges.length || !emails.length) {
+        return;
+      }
+
+      filterBtn.disabled = true;
+      const btnOriginal = filterBtn.textContent;
+      filterBtn.textContent = 'Фильтрую…';
+
+      try {
+        const key = keyEl.value || "";
+        const buckets = await Promise.all(emails.map(email => bucket(email, key)));
+        const passed = [];
+        buckets.forEach((b, idx) => {
+          if (inRanges(b, ranges)) passed.push(emails[idx]);
+        });
+        filteredOut.value = passed.join('\n');
+        filteredCount.textContent = passed.length;
+      } finally {
+        filterBtn.disabled = false;
+        filterBtn.textContent = btnOriginal;
+      }
+    });
+
+    corpBtn.addEventListener('click', () => {
+      const emails = splitEmailList(filteredOut.value);
+      corpOut.value = '';
+      corpCount.textContent = '0';
+      if (!emails.length) return;
+      const corpEmails = emails.filter(isCorporateEmail);
+      corpOut.value = corpEmails.join('\n');
+      corpCount.textContent = corpEmails.length;
     });
 
     // Copy helper: puts a ready-to-use function on clipboard
